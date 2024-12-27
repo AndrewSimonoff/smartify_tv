@@ -6,7 +6,7 @@ CONF_POWER_ENTITY = "power_entity"
 CONF_IR_REMOTE = "ir_remote"
 
 # Пауза между нажатиями кнопок на иммитируемом пульте
-INTERCOMMAND_PAUSE = 1
+INTERCOMMAND_PAUSE = 0.5
 
 # Словарь основных команд пульта ТВ
 COMMAND_NAMES = {
