@@ -230,11 +230,10 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         """Mute or unmute the volume."""
         # Ожидаем окончание выполнения предыдущей команды, если она была
         self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
-        _LOGGER.warning("Self MUTE is: %s, new MUTE is %s", self._is_mute, mute)
+        self._is_mute = mute
         command = 'MUTE' if mute else 'UNMUTE'
         try:
-            self._is_mute = mute
-            await self.handle_send_command(ServiceCall(domain=None, service=None, data={"command": command}))
+            await self.handle_send_command(ServiceCall(domain=None,service=None,data={"command": command}))
             self.async_write_ha_state()  # Обновляем состояние после изменения
         except ValueError:
             _LOGGER.warning("%s error for %s", command, self._name)
