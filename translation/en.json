@@ -1,0 +1,22 @@
+﻿{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Add SmartifyTV",
+                "data": {
+                    "name": "Name"
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "SmartifyTV Options",
+                "data": {
+                    "name": "Name"
+                }
+            }
+        }
+    }
+}
