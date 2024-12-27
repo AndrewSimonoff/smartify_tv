@@ -231,6 +231,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         # Ожидаем окончание выполнения предыдущей команды, если она была
         self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
         # Проверяем, отличается ли новое состояние от текущего
+        _LOGGER.warning("Self MUTE is: %s, new MUTE is %s", self._is_mute, mute)
         if self._is_mute != mute:
             self._is_mute = mute
             command = 'MUTE' if mute else 'UNMUTE'
