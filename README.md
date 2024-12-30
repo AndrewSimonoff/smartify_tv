@@ -15,7 +15,7 @@ SmartifyTV — это интеграция, которая позволяет п
 1. Требования:
    - Установленный Home Assistant.
    - Любой обычный телевизор.
-   - Розетка с функцией измерения мгновенной мощьности.
+   - Розетка с функцией измерения мгновенной мощности (обязательно!).
    - IR-пульт (например, Broadlink).
 
 2. Шаги установки:
@@ -48,11 +48,11 @@ SmartifyTV — это интеграция, которая позволяет п
    - KEY_8
    - KEY_9
 
-
-## Примеры
+## Примеры команд в формате YAML
 
 1. Программирование команд (YAML):
-
+   ВНИМАНИЕ!!! Обучение командам производится от имени устройства, созданного в рамках интеграции!
+   
    action: smartifytv.learn_command
    data:
      command: POWER_ON
@@ -86,7 +86,7 @@ SmartifyTV is an integration that allows you to turn your regular TV into a "sma
 1. Requirements:
    - Installed Home Assistant.
    - Any regular TV.
-   - A power socket with instant power measurement capability.
+   - A power socket with instant power measurement capability (mandatory!).
    - An IR remote (e.g., Broadlink).
 
 2. Installation Steps:
@@ -119,9 +119,10 @@ SmartifyTV is an integration that allows you to turn your regular TV into a "sma
    - KEY8
    - KEY9
 
-## Examples
+## Command Examples in YAML Format
 
-1. Programming Commands (YAML):
+1. Command Programming (YAML):
+   ATTENTION!!! Command training is performed on behalf of the device created within the integration!
 
    action: smartifytv.learn_command
    data:
