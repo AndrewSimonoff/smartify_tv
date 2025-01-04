@@ -202,7 +202,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         # Вызов сервиса remote.send_command
         if self._state == STATE_OFF:
             try:
-                await self.handle_send_command(ServiceCall(domain=None,service=None,data={"command": 'POWER_ON'}))
+                await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'POWER_ON'}))
             except ValueError:
                 _LOGGER.warning("POWER_ON error value: %s", power_state.state)
 
@@ -211,7 +211,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         # Вызов сервиса remote.send_command
         if self._state == STATE_ON:
             try:
-                await self.handle_send_command(ServiceCall(domain=None,service=None,data={"command": 'POWER_OFF'}))
+                await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'POWER_OFF'}))
             except ValueError:
                 _LOGGER.warning("POWER_OFF error value: %s", power_state.state)
 
@@ -233,7 +233,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         self._is_mute = mute
         command = 'MUTE' if mute else 'UNMUTE'
         try:
-            await self.handle_send_command(ServiceCall(domain=None,service=None,data={"command": command}))
+            await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": command}))
             self.async_write_ha_state()  # Обновляем состояние после изменения
         except ValueError:
             _LOGGER.warning("%s error for %s", command, self._name)
@@ -243,7 +243,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         # Ожидаем окончание выполнения предыдущей команды, если она была
         self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
         # Увеличиваем громкость
-        await self.handle_send_command(ServiceCall(domain=None,service=None,data={"command": 'VOLUME_UP'}))
+        await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'VOLUME_UP'}))
         if self._volume_level < 1.0:
             self._volume_level = min(1.0, self._volume_level + 0.1)
             self.async_write_ha_state()
@@ -253,7 +253,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         # Ожидаем окончание выполнения предыдущей команды, если она была
         self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
         # Уменьшаем громкость
-        await self.handle_send_command(ServiceCall(domain=None,service=None,data={"command": 'VOLUME_DOWN'}))
+        await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'VOLUME_DOWN'}))
         if self._volume_level > 0.0:
             self._volume_level = max(0.0, self._volume_level - 0.1)
             self.async_write_ha_state()
@@ -263,7 +263,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         # Ожидаем окончание выполнения предыдущей команды, если она была
         self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
         # Отправляем команду для переключения на предыдущий канал
-        await self.handle_send_command(ServiceCall(domain=None,service=None,data={"command": 'CHANNEL_DOWN'}))
+        await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'CHANNEL_DOWN'}))
         # Обновляем состояние, если это необходимо
         self.async_write_ha_state()
 
@@ -272,7 +272,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         # Ожидаем окончание выполнения предыдущей команды, если она была
         self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
         # Отправляем команду для переключения на следующий канал
-        await self.handle_send_command(ServiceCall(domain=None,service=None,data={"command": 'CHANNEL_UP'}))
+        await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'CHANNEL_UP'}))
         # Обновляем состояние, если это необходимо
         self.async_write_ha_state()
 
@@ -288,7 +288,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
             for digit in str(channel_number):
                 command = self._commands[digit]  # Получаем команду из приватного словаря
                 """Вызов функции с текущей командой"""
-                await self.handle_send_command(ServiceCall(domain=None,service=None,data={"command": command}))
+                await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": command}))
                 # Пауза в INTERCOMMAND_PAUSE секунды между отправкой каждой команды
                 await asyncio.sleep(INTERCOMMAND_PAUSE)
 
@@ -300,7 +300,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
             if not media_id.isnumeric():
                 _LOGGER.warning("Channel must be numeric:  %s", media_id)
                 return
-            await self.set_channel(ServiceCall(domain=None, service=None, data={"channel_number": int(media_id)}))
+            await self.set_channel(ServiceCall(self.hass,domain=None, service=None, data={"channel_number": int(media_id)}))
             return
 
         if media_type in [MediaType.URL, MediaType.APP]:
