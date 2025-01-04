@@ -1,7 +1,7 @@
 {
   "domain": "smartify_tv",
   "name": "SmartifyTV",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "config_flow": true,
   "documentation": "",
   "requirements": [],
