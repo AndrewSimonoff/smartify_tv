@@ -47,26 +47,32 @@ SmartifyTV — это интеграция, которая позволяет п
    - KEY_7
    - KEY_8
    - KEY_9
+   - PLAY
+   - PAUSE
+   - PLAYPAUSE
+   - STOP
 
 ## Примеры команд в формате YAML
 
 1. Программирование команд (YAML):
    ВНИМАНИЕ!!! Обучение командам производится от имени устройства, созданного в рамках интеграции!
    
+```yaml
    action: smartifytv.learn_command
    data:
      command: POWER_ON
-
+```
 
 3. Переключение канала (YAML):
-   
+
+```yaml
    action: media_player.play_media\n
    target:
      entity_id: media_player.smartifytv
    data:
      media_content_type: channel
      media_content_id: 17
-
+```
 ##====================================================================##
 
 ## Description
@@ -118,21 +124,29 @@ SmartifyTV is an integration that allows you to turn your regular TV into a "sma
    - KEY7
    - KEY8
    - KEY9
+   - PLAY
+   - PAUSE
+   - PLAYPAUSE
+   - STOP
 
 ## Command Examples in YAML Format
 
 1. Command Programming (YAML):
    ATTENTION!!! Command training is performed on behalf of the device created within the integration!
 
+```yaml
    action: smartifytv.learn_command
    data:
      command: POWER_ON
+```
 
 2. Channel Switching (YAML):
 
+```yaml
    action: media_player.play_media
    target:
      entity_id: media_player.smartifytv
    data:
      media_content_type: channel
      media_content_id: 17
+```
