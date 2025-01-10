@@ -66,7 +66,7 @@ SmartifyTV — это интеграция, которая позволяет п
 3. Переключение канала (YAML):
 
 ```yaml
-   action: media_player.play_media\n
+   action: media_player.play_media
    target:
      entity_id: media_player.smartifytv
    data:
