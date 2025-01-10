@@ -19,6 +19,10 @@ COMMAND_NAMES = {
     "CHANNEL_UP": "",
     "CHANNEL_DOWN": "",
     "SOURCE": "",
+    "PLAY": "",
+    "STOP": "",
+    "PAUSE": "",
+    "PLAYPAUSE": "",
     "KEY_0": "",
     "KEY_1": "",
     "KEY_2": "",
@@ -36,4 +40,3 @@ COMMAND_NAMES = {
     "OK": "",
     "EXIT": "",
 }
-
