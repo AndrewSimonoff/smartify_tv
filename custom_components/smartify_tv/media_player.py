@@ -37,9 +37,10 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry):
         """Initialize the media player."""
         self.hass = hass
+        self._state = STATE_OFF
+        self._attr_state = MediaPlayerState.OFF
         self._config_entry = config_entry
         self._name = config_entry.data.get("name", DEFAULT_NAME)  # Извлекаем имя из config_entry
-        self._state = STATE_OFF
         self._unique_id = config_entry.data.get("unique_id")  # Извлекаем сохраненный unique_id
         self._ir_remote = config_entry.data.get(CONF_IR_REMOTE)
         self._power_entity = config_entry.data.get(CONF_POWER_ENTITY)
@@ -48,7 +49,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         self._volume_level = 0.2  # Начальный уровень громкости (от 0.0 до 1.0) - не учитывается))
         self._current_channel = 1  # Начальный канал
         self._last_command_time = 0
-        self._commands = {
+        self._button_aliases = {
             "0": "KEY_0",
             "1": "KEY_1",
             "2": "KEY_2",
@@ -74,7 +75,8 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
     @property
     def state(self):
         """Return the state of the device."""
-        return self._state
+        # return self._state
+        return self._attr_state
 
     @property
     def device_class(self):
@@ -96,7 +98,10 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
             MediaPlayerEntityFeature.VOLUME_STEP |
             MediaPlayerEntityFeature.PREVIOUS_TRACK |
             MediaPlayerEntityFeature.NEXT_TRACK |
-            MediaPlayerEntityFeature.PLAY_MEDIA
+            MediaPlayerEntityFeature.PLAY_MEDIA |
+            MediaPlayerEntityFeature.PLAY |
+            MediaPlayerEntityFeature.STOP |
+            MediaPlayerEntityFeature.PAUSE
         )
 
     @property
@@ -151,8 +156,10 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
                     power_value = float(new_state.state)
                     if power_value > POWER_THRESHOLD:
                         self._state = STATE_ON
+                        self._attr_state = MediaPlayerState.ON
                     else:
                         self._state = STATE_OFF
+                        self._attr_state = MediaPlayerState.OFF
                 except ValueError:
                     _LOGGER.warning("Invalid power value: %s", new_state.state)
             else:
@@ -286,7 +293,7 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
             self._current_channel = channel_number
             self.async_write_ha_state()
             for digit in str(channel_number):
-                command = self._commands[digit]  # Получаем команду из приватного словаря
+                command = self._button_aliases[digit]  # Получаем команду из приватного словаря
                 """Вызов функции с текущей командой"""
                 await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": command}))
                 # Пауза в INTERCOMMAND_PAUSE секунды между отправкой каждой команды
@@ -307,6 +314,43 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
             return
 
         _LOGGER.warning("Invalid media type:  %s", media_type)
+
+    async def async_media_play(self) -> None:
+        """Send play command to media player."""
+        # Ожидаем окончание выполнения предыдущей команды, если она была
+        self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
+        # Отправляем команду для переключения на следующий канал
+        await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'PLAY'}))
+        # Set status
+        self._attr_state = MediaPlayerState.PLAYING
+        # Обновляем состояние, если это необходимо
+        self.async_write_ha_state()
+
+    async def async_media_play_pause(self) -> None:
+        """Send pause command to media player."""
+        if self._attr_state == MediaPlayerState.PLAYING:
+            self._attr_state = MediaPlayerState.PAUSED
+        else:
+            self._attr_state = MediaPlayerState.PLAYING
+        _LOGGER.warning("Calling media_play_pause")
+        return None
+
+    async def async_media_pause(self) -> None:
+        """Send pause command to media player."""
+        # Ожидаем окончание выполнения предыдущей команды, если она была
+        self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
+        # Отправляем команду для переключения на следующий канал
+        await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'PAUSE'}))
+        # Set status
+        self._attr_state = MediaPlayerState.PAUSED
+        # Обновляем состояние, если это необходимо
+        self.async_write_ha_state()
+
+    async def async_media_stop(self) -> None:
+        """Send stop command to media player."""
+        self._attr_state = MediaPlayerState.IDLE
+        _LOGGER.warning("media_stop")
+        return None
 
 #======================================================================================================
 
