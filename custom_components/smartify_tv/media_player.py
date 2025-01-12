@@ -5,7 +5,11 @@ import logging
 import voluptuous as vol
 import asyncio
 import time
+import json
+import os
+import broadlink as blk
 
+from pathlib import Path
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -42,8 +46,10 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         self._config_entry = config_entry
         self._name = config_entry.data.get("name", DEFAULT_NAME)  # Извлекаем имя из config_entry
         self._unique_id = config_entry.data.get("unique_id")  # Извлекаем сохраненный unique_id
-        self._ir_remote = config_entry.data.get(CONF_IR_REMOTE)
         self._power_entity = config_entry.data.get(CONF_POWER_ENTITY)
+        self._ir_remote = config_entry.data.get(CONF_IR_REMOTE)
+        self._ir_remote_mac = None  # MAC _ir_remote (если хоть одну команду учили)
+        self._ir_remote_cmd_file = None  # Путь к файлу команд _ir_remote (если хоть одну команду учили)
         self._is_unavailable = False
         self._is_mute = False  # Атрибут для хранения состояния звука
         self._volume_level = 0.2  # Начальный уровень громкости (от 0.0 до 1.0) - не учитывается))
@@ -61,11 +67,14 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
             "8": "KEY_8",
             "9": "KEY_9"
         }
+        self._learned_commands = None
         # Подписываемся на изменения состояния
         self.hass.bus.async_listen(
             "state_changed",
             self._handle_power_state_change
         )
+        # Получаем MAC и имя файла при инициализации
+        hass.async_create_task(self._async_get_ir_remote_mac_and_commands())
 
     @property
     def name(self):
@@ -114,7 +123,9 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         """Return extra state attributes."""
         return {
             "is_unavailable": self._is_unavailable, 
-            "uuid": self._unique_id
+            "uuid": self._unique_id,
+            "ir_mac": self._ir_remote_mac,
+            "ir_file": self._ir_remote_cmd_file
         }
 
     @property
@@ -132,10 +143,76 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         """Return the current channel."""
         return f"Channel {self._current_channel}"
 
+    def _find_broadlink_file_by_mac(self, mac_address):
+        """Ищем в /config/.storage файл Broadlink, с указаным MAC-адресом в имени"""
+        # Путь к файлам команд Broadlink
+        dir_path = Path(__file__).parent.parent.parent / ".storage"
+        # Определяем шаблон
+        filename_mask = f"broadlink_remote_{mac_address}_codes"
+        # Ищем первый файл, который соответствует маске и является файлом
+        for file_path in dir_path.iterdir():
+            if file_path.is_file() and filename_mask in file_path.name:
+                return file_path.absolute()
+        return None  # Если файл не найден
+
+    def _read_broadlink_commands(self, bfile):
+        unique_id_key = self._unique_id
+        if bfile and bfile.is_file():
+            with bfile.open('r') as command_file:
+                data = json.load(command_file)
+                # Ищем запись по UID
+                if isinstance(data, dict) and 'data' in data and isinstance(data['data'], dict):
+                    if unique_id_key in data['data']:
+                        # Переписываем найденные коды
+                        return data['data'][unique_id_key].copy()
+        return None
+
+    def _get_ir_remote_mac_and_commands(self):
+        # основа: https://github.com/mjg59/python-broadlink/issues/377
+        # Листаем броадлинки и находим в файле 
+        # с именем "broadlink_remote_XXXXXXXX_codes" (mac-адрес подставляем)
+        # записи для устройства с self._unique_id
+        devs = blk.discover(timeout=5)  # Все устройства Broadlink
+        # Цикл по всем обнаруженным устройствам
+        for d in devs:
+            # Получаем строковое представление MAC-адреса в шестнадцатеричном формате
+            mac_address = d.mac.hex()
+            # Ищем файл команд
+            ir_cmd_file = self._find_broadlink_file_by_mac(mac_address)
+            # Читаем команды. Если файл- ок, будут команды, иначе - None
+            self._learned_commands = self._read_broadlink_commands(ir_cmd_file)
+            if self._learned_commands != None:
+                self._ir_remote_cmd_file = ir_cmd_file
+                self._ir_remote_mac = mac_address
+                return  # Выход из цикла for, если данные найдены и считаны
+
+    async def _async_get_ir_remote_mac_and_commands(self):
+        # Используем add_executor_job для выполнения в фоновом потоке
+        await self.hass.async_add_executor_job(self._get_ir_remote_mac_and_commands)
+
+    def _get_learned_commands(self):
+        """Короткая процедура обновления кодов из файла"""
+        self._learned_commands = self._read_broadlink_commands(self._ir_remote_cmd_file)
+
+    async def _async_get_learned_commands(self):
+        """Асинхронный вызов короткой процедуры обновления кодов из файла"""
+        # Используем add_executor_job для выполнения в фоновом потоке
+        await self.hass.async_add_executor_job(self._get_learned_commands)
+
+    async def async_check_command_existence(self, key_to_check):
+        """Асинхронно проверяет наличие ключа в self._learned_commands."""
+        if isinstance(self._learned_commands, dict):
+            if key_to_check in self._learned_commands:
+                return True
+            else:
+                return False
+        else:
+            return False
+
     async def async_update(self):
         """Fetch new state data for the media player."""
         # Возможно, вам все еще нужно периодическое обновление для других данных
-        pass
+        await self.hass.async_add_executor_job(self._get_learned_commands)
 
     async def _get_ir_status(self):
         """Get the IR status."""
@@ -193,16 +270,18 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
     async def handle_send_command(self, call: ServiceCall):
         """Handle the service call to send a command."""
         command = call.data.get("command")
-        # Вызов сервиса remote.send_command
-        await self.hass.services.async_call(
-            "remote",
-            "send_command",
-            {
-                "entity_id": self._ir_remote,
-                "device": self._unique_id,
-                "command": command,
-            }
-        )
+        # Проверяем наличие ключа
+        if await self.async_check_command_existence(command):
+            # Вызов сервиса remote.send_command
+            await self.hass.services.async_call(
+                "remote",
+                "send_command",
+                {
+                    "entity_id": self._ir_remote,
+                    "device": self._unique_id,
+                    "command": command,
+                }
+            )
 
     async def async_turn_on(self):
         """Turn the media player on."""
@@ -317,9 +396,13 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
 
     async def async_media_play(self) -> None:
         """Send play command to media player."""
+				# Проверяем состояние, если выключен - выход
+        # Происходит потому, что нажатие кнопки при выключенном ТВ ведёт к отображению его как включенного
+        if self._state == STATE_OFF:
+            return
         # Ожидаем окончание выполнения предыдущей команды, если она была
         self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
-        # Отправляем команду для переключения на следующий канал
+        # Отправляем команду для начала/возобновления проигрывания
         await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'PLAY'}))
         # Set status
         self._attr_state = MediaPlayerState.PLAYING
@@ -328,18 +411,33 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
 
     async def async_media_play_pause(self) -> None:
         """Send pause command to media player."""
+				# Проверяем состояние, если выключен - выход
+        # Происходит потому, что нажатие кнопки при выключенном ТВ ведёт к отображению его как включенного
+        if self._state == STATE_OFF:
+            return
+        # Ожидаем окончание выполнения предыдущей команды, если она была
+        self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
+        new_command = 'PAUSE' if self._attr_state == MediaPlayerState.PLAYING else 'PLAY'
+        # Отправляем команду для приостановки воспроизведения
+        await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": new_command}))
+        # Set status
         if self._attr_state == MediaPlayerState.PLAYING:
             self._attr_state = MediaPlayerState.PAUSED
         else:
             self._attr_state = MediaPlayerState.PLAYING
+        # Обновляем состояние, если это необходимо
+        self.async_write_ha_state()
         _LOGGER.warning("Calling media_play_pause")
-        return None
 
     async def async_media_pause(self) -> None:
         """Send pause command to media player."""
+				# Проверяем состояние, если выключен - выход
+        # Происходит потому, что нажатие кнопки при выключенном ТВ ведёт к отображению его как включенного
+        if self._state == STATE_OFF:
+            return
         # Ожидаем окончание выполнения предыдущей команды, если она была
         self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
-        # Отправляем команду для переключения на следующий канал
+        # Отправляем команду для приостановки воспроизведения
         await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'PAUSE'}))
         # Set status
         self._attr_state = MediaPlayerState.PAUSED
@@ -348,9 +446,19 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
 
     async def async_media_stop(self) -> None:
         """Send stop command to media player."""
+				# Проверяем состояние, если выключен - выход
+        # Происходит потому, что нажатие кнопки при выключенном ТВ ведёт к отображению его как включенного
+        if self._state == STATE_OFF:
+            return
+        # Ожидаем окончание выполнения предыдущей команды, если она была
+        self._last_command_time = await self.ensure_command_pause(self._last_command_time, INTERCOMMAND_PAUSE)
+        # Отправляем команду для остановки воспроизведения
+        await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'STOP'}))
+        # Set status
         self._attr_state = MediaPlayerState.IDLE
+        # Обновляем состояние, если это необходимо
+        self.async_write_ha_state()
         _LOGGER.warning("media_stop")
-        return None
 
 #======================================================================================================
 
