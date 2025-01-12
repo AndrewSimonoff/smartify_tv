@@ -58,7 +58,7 @@ SmartifyTV — это интеграция, которая позволяет п
    ВНИМАНИЕ!!! Обучение командам производится от имени устройства, созданного в рамках интеграции!
    
 ```yaml
-   action: smartifytv.learn_command
+   action: your_smartifytv_entity.learn_command
    data:
      command: POWER_ON
 ```
@@ -68,7 +68,7 @@ SmartifyTV — это интеграция, которая позволяет п
 ```yaml
    action: media_player.play_media
    target:
-     entity_id: media_player.smartifytv
+     entity_id: media_player.your_smartifytv_entity
    data:
      media_content_type: channel
      media_content_id: 17
@@ -135,7 +135,7 @@ SmartifyTV is an integration that allows you to turn your regular TV into a "sma
    ATTENTION!!! Command training is performed on behalf of the device created within the integration!
 
 ```yaml
-   action: smartifytv.learn_command
+   action: your_smartifytv_entity.learn_command
    data:
      command: POWER_ON
 ```
@@ -145,7 +145,7 @@ SmartifyTV is an integration that allows you to turn your regular TV into a "sma
 ```yaml
    action: media_player.play_media
    target:
-     entity_id: media_player.smartifytv
+     entity_id: media_player.your_smartifytv_entity
    data:
      media_content_type: channel
      media_content_id: 17
