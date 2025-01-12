@@ -1,6 +1,6 @@
 ## Описание
 
-[SmartifyTV](https://github.com/AndrewSimonoff/smartify_tv/tree/main/custom_components/smartify_tv) — это интеграция, которая позволяет превратить ваш обычный телевизор в "умный", предоставляя возможность управления через Home Assistant (HASS) и голосовые ассистенты. С помощью SmartifyTV вы можете легко управлять вашим телевизором, используя голосовые команды или автоматизации в HASS.
+[SmartifyTV](https://github.com/AndrewSimonoff/smartify_tv) — это интеграция, которая позволяет превратить ваш обычный телевизор в "умный", предоставляя возможность управления через Home Assistant (HASS) и голосовые ассистенты. С помощью SmartifyTV вы можете легко управлять вашим телевизором, используя голосовые команды или автоматизации в HASS.
 
 ## Возможности
 
@@ -77,7 +77,7 @@
 
 ## Description
 
-[SmartifyTV](https://github.com/AndrewSimonoff/smartify_tv/tree/main/custom_components/smartify_tv) is an integration that allows you to turn your regular TV into a "smart" one, providing control through Home Assistant (HASS) and voice assistants. With SmartifyTV, you can easily manage your TV using voice commands or automations in HASS.
+[SmartifyTV](https://github.com/AndrewSimonoff/smartify_tv) is an integration that allows you to turn your regular TV into a "smart" one, providing control through Home Assistant (HASS) and voice assistants. With SmartifyTV, you can easily manage your TV using voice commands or automations in HASS.
 
 ## Features
 
