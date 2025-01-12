@@ -77,7 +77,7 @@
 
 ## Description
 
-SmartifyTV is an integration that allows you to turn your regular TV into a "smart" one, providing control through Home Assistant (HASS) and voice assistants. With SmartifyTV, you can easily manage your TV using voice commands or automations in HASS.
+[SmartifyTV](https://github.com/AndrewSimonoff/smartify_tv/tree/main/custom_components/smartify_tv) is an integration that allows you to turn your regular TV into a "smart" one, providing control through Home Assistant (HASS) and voice assistants. With SmartifyTV, you can easily manage your TV using voice commands or automations in HASS.
 
 ## Features
 
