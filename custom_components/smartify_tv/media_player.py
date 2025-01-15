@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import voluptuous as vol
 import asyncio
+import aiofiles
 import time
 import json
 import os
@@ -15,6 +16,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_registry import async_get
 from homeassistant.components.media_player import (
     MediaType,
     MediaPlayerState,
@@ -35,6 +37,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     """Set up Easy TV media player from a config entry."""
     async_add_entities([SmartifyTVMediaPlayer(hass, entry)], update_before_add=True)
 
+async def get_entity_info(hass, entity_id):
+    """Возвращает информацию о платформе и unique_id для указанного entity_id из реестра."""
+    # Получаем реестр сущностей
+    entity_registry = async_get(hass)
+    # Получаем запись для указанного entity_id
+    entry = entity_registry.async_get(entity_id)
+    # Если запись найдена, возвращаем платформу и unique_id
+    if entry:
+        return entry.platform, entry.unique_id
+    return None, None
+
 class SmartifyTVMediaPlayer(MediaPlayerEntity):
     """Representation of an Easy TV media player."""
 
@@ -48,7 +61,11 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         self._unique_id = config_entry.data.get("unique_id")  # Извлекаем сохраненный unique_id
         self._power_entity = config_entry.data.get(CONF_POWER_ENTITY)
         self._ir_remote = config_entry.data.get(CONF_IR_REMOTE)
+        self._ir_remote_known_types = {
+            'broadlink': True,
+        }
         self._ir_remote_mac = None  # MAC _ir_remote (если хоть одну команду учили)
+        self._ir_remote_platform = None  # Платформа пульта
         self._ir_remote_cmd_file = None  # Путь к файлу команд _ir_remote (если хоть одну команду учили)
         self._is_unavailable = False
         self._is_mute = False  # Атрибут для хранения состояния звука
@@ -68,13 +85,28 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
             "9": "KEY_9"
         }
         self._learned_commands = None
+        self._learning_locked = False
         # Подписываемся на изменения состояния
+        # Включение/выключение
         self.hass.bus.async_listen(
             "state_changed",
             self._handle_power_state_change
         )
-        # Получаем MAC и имя файла при инициализации
-        hass.async_create_task(self._async_get_ir_remote_mac_and_commands())
+        # начальная настройка, связанная с получением данных используемых физических устройств
+        hass.async_create_task(self.async_initialize())
+
+    async def async_initialize(self):
+        """Асинхронная настройка IR устройства."""
+        platform, unique_id = await get_entity_info(self.hass, self._ir_remote)
+        self._ir_remote_platform = platform.lower()
+        self._ir_remote_mac = unique_id
+        # BROADLINK
+        if self._ir_remote_platform == 'broadlink':
+            self._ir_remote_cmd_file = self._find_broadlink_file_by_mac(self._ir_remote_mac)
+            # Читаем команды. Если файл- ок, будут команды, иначе - None
+            self._learned_commands = await self._read_broadlink_commands(self._ir_remote_cmd_file)
+        else:
+            self._ir_remote_mac = None
 
     @property
     def name(self):
@@ -124,8 +156,10 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
         return {
             "is_unavailable": self._is_unavailable, 
             "uuid": self._unique_id,
+            "ir_platform": self._ir_remote_platform,
             "ir_mac": self._ir_remote_mac,
-            "ir_file": self._ir_remote_cmd_file
+            "ir_file": self._ir_remote_cmd_file,
+            "ir_cmd": self._learned_commands 
         }
 
     @property
@@ -145,21 +179,21 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
 
     def _find_broadlink_file_by_mac(self, mac_address):
         """Ищем в /config/.storage файл Broadlink, с указаным MAC-адресом в имени"""
-        # Путь к файлам команд Broadlink
-        dir_path = Path(__file__).parent.parent.parent / ".storage"
         # Определяем шаблон
         filename_mask = f"broadlink_remote_{mac_address}_codes"
-        # Ищем первый файл, который соответствует маске и является файлом
-        for file_path in dir_path.iterdir():
-            if file_path.is_file() and filename_mask in file_path.name:
-                return file_path.absolute()
+        # Полное имя файла команд Broadlink
+        broadlink_file = Path(__file__).parent.parent.parent / ".storage" / filename_mask
+        if broadlink_file.is_file():
+            return broadlink_file.absolute()
         return None  # Если файл не найден
 
-    def _read_broadlink_commands(self, bfile):
+    async def _read_broadlink_commands(self, bfile):
+        """Читаем команды Broadlink"""
         unique_id_key = self._unique_id
         if bfile and bfile.is_file():
-            with bfile.open('r') as command_file:
-                data = json.load(command_file)
+            async with aiofiles.open(bfile, mode='r') as command_file:
+                file_content = await command_file.read()
+                data = json.loads(file_content)
                 # Ищем запись по UID
                 if isinstance(data, dict) and 'data' in data and isinstance(data['data'], dict):
                     if unique_id_key in data['data']:
@@ -167,52 +201,34 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
                         return data['data'][unique_id_key].copy()
         return None
 
-    def _get_ir_remote_mac_and_commands(self):
-        # основа: https://github.com/mjg59/python-broadlink/issues/377
-        # Листаем броадлинки и находим в файле 
-        # с именем "broadlink_remote_XXXXXXXX_codes" (mac-адрес подставляем)
-        # записи для устройства с self._unique_id
-        devs = blk.discover(timeout=5)  # Все устройства Broadlink
-        # Цикл по всем обнаруженным устройствам
-        for d in devs:
-            # Получаем строковое представление MAC-адреса в шестнадцатеричном формате
-            mac_address = d.mac.hex()
-            # Ищем файл команд
-            ir_cmd_file = self._find_broadlink_file_by_mac(mac_address)
-            # Читаем команды. Если файл- ок, будут команды, иначе - None
-            self._learned_commands = self._read_broadlink_commands(ir_cmd_file)
-            if self._learned_commands != None:
-                self._ir_remote_cmd_file = ir_cmd_file
-                self._ir_remote_mac = mac_address
-                return  # Выход из цикла for, если данные найдены и считаны
-
-    async def _async_get_ir_remote_mac_and_commands(self):
-        # Используем add_executor_job для выполнения в фоновом потоке
-        await self.hass.async_add_executor_job(self._get_ir_remote_mac_and_commands)
-
-    def _get_learned_commands(self):
-        """Короткая процедура обновления кодов из файла"""
-        self._learned_commands = self._read_broadlink_commands(self._ir_remote_cmd_file)
-
-    async def _async_get_learned_commands(self):
-        """Асинхронный вызов короткой процедуры обновления кодов из файла"""
-        # Используем add_executor_job для выполнения в фоновом потоке
-        await self.hass.async_add_executor_job(self._get_learned_commands)
-
     async def async_check_command_existence(self, key_to_check):
         """Асинхронно проверяет наличие ключа в self._learned_commands."""
-        if isinstance(self._learned_commands, dict):
-            if key_to_check in self._learned_commands:
-                return True
-            else:
-                return False
-        else:
-            return False
+        try:
+            # Не проверяем платформу, т.к. команды всех платформ приведены к определённому типу,
+            # но проверяем известность платформы для этой интеграции
+            # (способ отсюда: https://ru.stackoverflow.com/questions/460207/%D0%95%D1%81%D1%82%D1%8C-%D0%BB%D0%B8-%D0%B2-python-%D0%BE%D0%BF%D0%B5%D1%80%D0%B0%D1%82%D0%BE%D1%80-switch-case)
+            if self._ir_remote_known_types[self._ir_remote_platform]:
+                # Если платформа IR известна - проверяем команды
+                if isinstance(self._learned_commands, dict):
+                    # self._learned_commands содержит команды
+                    if key_to_check in self._learned_commands:
+                        # Команда изучена
+                        return True
+                    else:
+                        # Команда не изучена
+                        return False
+                else:
+                    # self._learned_commands == None
+                    return False
+        except KeyError as e:
+            # Если платформа IR не известна - возвращаем True, т.к. мы не умеем работать с этой платформой!
+            return True
 
     async def async_update(self):
         """Fetch new state data for the media player."""
         # Возможно, вам все еще нужно периодическое обновление для других данных
-        await self.hass.async_add_executor_job(self._get_learned_commands)
+
+# ===================================================================================
 
     async def _get_ir_status(self):
         """Get the IR status."""
@@ -251,38 +267,6 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
 
             self.async_write_ha_state()
 
-# ===================================================================================
-
-    async def handle_learn_command(self, call: ServiceCall):
-        """Handle the service call to learn a command."""
-        command = call.data.get("command")
-        # Вызов сервиса remote.learn_command
-        await self.hass.services.async_call(
-            "remote",
-            "learn_command",
-            {
-                "entity_id": self._ir_remote,
-                "device": self._unique_id,
-                "command": command,
-            }
-        )
-
-    async def handle_send_command(self, call: ServiceCall):
-        """Handle the service call to send a command."""
-        command = call.data.get("command")
-        # Проверяем наличие ключа
-        if await self.async_check_command_existence(command):
-            # Вызов сервиса remote.send_command
-            await self.hass.services.async_call(
-                "remote",
-                "send_command",
-                {
-                    "entity_id": self._ir_remote,
-                    "device": self._unique_id,
-                    "command": command,
-                }
-            )
-
     async def async_turn_on(self):
         """Turn the media player on."""
         # Вызов сервиса remote.send_command
@@ -300,6 +284,46 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
                 await self.handle_send_command(ServiceCall(self.hass,domain=None,service=None,data={"command": 'POWER_OFF'}))
             except ValueError:
                 _LOGGER.warning("POWER_OFF error value: %s", power_state.state)
+
+# ===================================================================================
+
+    async def handle_send_command(self, call: ServiceCall):
+        """Handle the service call to send a command."""
+        command = call.data.get("command")
+        # Проверяем наличие ключа
+        if await self.async_check_command_existence(command):
+            # Вызов сервиса remote.send_command
+            await self.hass.services.async_call(
+                "remote",
+                "send_command",
+                {
+                    "entity_id": self._ir_remote,
+                    "device": self._unique_id,
+                    "command": command,
+                }
+            )
+
+    async def handle_learn_command(self, call: ServiceCall):
+        """Handle the service call to learn a command."""
+        if self._learning_locked:
+            return None
+        command = call.data.get("command")
+        # Вызов сервиса remote.learn_command
+        await self.hass.services.async_call(
+            "remote",
+            "learn_command",
+            {
+                "entity_id": self._ir_remote,
+                "device": self._unique_id,
+                "command": command,
+            }
+        )
+        if self._ir_remote_platform == 'broadlink':
+            self._learning_locked = True
+            # Ждём 35 сек и считываем коды из файла broadlink
+            await asyncio.sleep(35)
+            await self._read_broadlink_commands(self._ir_remote_cmd_file)
+            self._learning_locked = False
 
 #======================================================================================================
 
