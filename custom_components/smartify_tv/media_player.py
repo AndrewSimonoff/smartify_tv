@@ -107,6 +107,8 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
             self._learned_commands = await self._read_broadlink_commands(self._ir_remote_cmd_file)
         else:
             self._ir_remote_mac = None
+        # Проверяем начальное состояние
+        await self._update_power_state()
 
     @property
     def name(self):
@@ -239,33 +241,42 @@ class SmartifyTVMediaPlayer(MediaPlayerEntity):
             _LOGGER.warning("IR entity state is unavailable or unknown: %s", ir_state.state if ir_state else "None")
             return STATE_UNAVAILABLE
 
+    async def _update_power_state(self):
+        """Обновление состояния мощности."""
+        state = self.hass.states.get(self._power_entity)
+        if state is None:
+            self._state = STATE_OFF
+            self._attr_state = MediaPlayerState.OFF
+            self._is_unavailable = True
+            self.async_write_ha_state()
+            return
+        if state.state not in (None, "unknown", "unavailable"):
+            try:
+                power_value = float(state.state)
+                if power_value > POWER_THRESHOLD:
+                    self._state = STATE_ON
+                    self._attr_state = MediaPlayerState.ON
+                else:
+                    self._state = STATE_OFF
+                    self._attr_state = MediaPlayerState.OFF
+            except ValueError:
+                _LOGGER.warning("Invalid power value: %s", state.state)
+                self._state = STATE_OFF
+        else:
+            _LOGGER.warning("Power entity state is unavailable or unknown: %s", state.state)
+            self._state = STATE_OFF
+        # Определяем доступность
+        if state.state in (None, "unknown", "unavailable") or await self._get_ir_status() == STATE_UNAVAILABLE:
+            self._is_unavailable = True
+        else:
+            self._is_unavailable = False
+        self.async_write_ha_state()
+
     @callback
     async def _handle_power_state_change(self, event):
         """Обработчик изменения состояния мощности."""
         if event.data.get("entity_id") == self._power_entity:
-            new_state = event.data.get("new_state")
-            if new_state and new_state.state not in (None, "unknown", "unavailable"):
-                try:
-                    power_value = float(new_state.state)
-                    if power_value > POWER_THRESHOLD:
-                        self._state = STATE_ON
-                        self._attr_state = MediaPlayerState.ON
-                    else:
-                        self._state = STATE_OFF
-                        self._attr_state = MediaPlayerState.OFF
-                except ValueError:
-                    _LOGGER.warning("Invalid power value: %s", new_state.state)
-            else:
-                _LOGGER.warning("Power entity state is unavailable or unknown: %s", new_state.state)
-                self._state = STATE_OFF
-
-            # Определяем доступность
-            if new_state.state in (None, "unknown", "unavailable") or await self._get_ir_status() == STATE_UNAVAILABLE:
-                self._is_unavailable = True
-            else:
-                self._is_unavailable = False
-
-            self.async_write_ha_state()
+            await self._update_power_state()
 
     async def async_turn_on(self):
         """Turn the media player on."""
